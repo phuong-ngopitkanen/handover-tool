@@ -3,3 +3,6 @@ builder = "nixpacks"
 
 [deploy]
 startCommand = "npm run start"
+
+[build.nixpacksPlan.phases.setup]
+nixPkgs = ["nodejs_20", "python3"]
