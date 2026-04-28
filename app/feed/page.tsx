@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { renderWithMentions } from "@/lib/renderMentions";
 import {
@@ -73,7 +73,7 @@ function parseItemCheckedDescription(
   return { item: rest.slice(0, idx), comment: comment || null };
 }
 
-export default function FeedPage() {
+function FeedContent() {
   const [handovers, setHandovers] = useState<Handover[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [filter, setFilter] = useState<"all" | "unread" | "acknowledged">("all");
@@ -954,5 +954,13 @@ export default function FeedPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function FeedPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <FeedContent />
+    </Suspense>
   );
 }
