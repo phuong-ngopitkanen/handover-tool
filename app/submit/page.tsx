@@ -413,7 +413,7 @@ export default function SubmitPage() {
         <p className="mb-8 text-sm text-[#6B6B6B]">
           {extracted
             ? "Review the information below and adjust anything that looks incorrect."
-            : "Add your shift notes and we will structure them automatically.Upload a document or paste text to get started."}
+            : "Add your shift notes and we will structure them automatically. Upload a document or paste text to get started."}
         </p>
 
         {!extracted ? (

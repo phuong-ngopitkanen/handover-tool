@@ -32,10 +32,10 @@ export async function PATCH(
   const db = getDb();
   const acknowledgedAt = new Date().toISOString();
   db.prepare(
-    "UPDATE handovers SET acknowledged = 1, acknowledged_at = ? WHERE id = ?"
-  ).run(acknowledgedAt, id);
+    "UPDATE handovers SET acknowledged = 1, acknowledged_at = :acknowledged_at WHERE id = :id"
+  ).run({ acknowledged_at: acknowledgedAt, id });
 
-  const row = db.prepare("SELECT * FROM handovers WHERE id = ?").get(id) as
+  const row = db.prepare("SELECT * FROM handovers WHERE id = :id").get({ id }) as
     | HandoverRow
     | undefined;
   if (!row) {

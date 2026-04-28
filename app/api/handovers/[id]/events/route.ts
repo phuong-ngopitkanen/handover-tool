@@ -19,8 +19,8 @@ export async function GET(
   }
 
   const rows = getDb()
-    .prepare("SELECT * FROM events WHERE handover_id = ? ORDER BY created_at ASC")
-    .all(id) as EventRow[];
+    .prepare("SELECT * FROM events WHERE handover_id = :handover_id ORDER BY created_at ASC")
+    .all({ handover_id: id }) as EventRow[];
   return NextResponse.json(rows);
 }
 
@@ -47,6 +47,15 @@ export async function POST(
 
   const actor = body.actor?.trim() ?? "";
   const description = body.description?.trim() ?? "";
+  if (actor.length > 100) {
+    return NextResponse.json({ error: "actor must be 100 characters or fewer." }, { status: 400 });
+  }
+  if (description.length > 5000) {
+    return NextResponse.json(
+      { error: "description must be 5000 characters or fewer." },
+      { status: 400 }
+    );
+  }
   if (eventType === "update_added" && (!actor || !description)) {
     return NextResponse.json(
       { error: "actor and description are required for update_added." },
@@ -58,13 +67,19 @@ export async function POST(
   const createdAt = new Date().toISOString();
   const result = db
     .prepare(
-      "INSERT INTO events (handover_id, event_type, actor, description, created_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO events (handover_id, event_type, actor, description, created_at) VALUES (:handover_id, :event_type, :actor, :description, :created_at)"
     )
-    .run(id, eventType, actor, description, createdAt);
+    .run({
+      handover_id: id,
+      event_type: eventType,
+      actor,
+      description,
+      created_at: createdAt,
+    });
 
   const inserted = db
-    .prepare("SELECT * FROM events WHERE id = ?")
-    .get(result.lastInsertRowid) as EventRow | undefined;
+    .prepare("SELECT * FROM events WHERE id = :id")
+    .get({ id: result.lastInsertRowid }) as EventRow | undefined;
   if (!inserted) {
     return NextResponse.json({ error: "Insert failed." }, { status: 500 });
   }

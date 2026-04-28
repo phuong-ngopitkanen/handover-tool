@@ -8,10 +8,16 @@ export function renderWithMentions(
   text: string,
   onNameClick: (name: string) => void
 ): ReactNode[] {
+  const isSafeMentionName = (name: string) =>
+    /^[A-Za-z -]+$/.test(name) && !/[<>&"'`]/.test(name);
+
   const parts = text.split(/(@[A-Z][a-z]+ [A-Z][a-z]+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("@")) {
       const name = part.slice(1);
+      if (!isSafeMentionName(name)) {
+        return <span key={i}>{part}</span>;
+      }
       return (
         <span
           key={i}

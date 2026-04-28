@@ -39,8 +39,8 @@ export function generateTicketId(db: Database.Database): string {
   const compactDate = `${yyyy}${mm}${dd}`;
 
   const row = db
-    .prepare("SELECT COUNT(*) as count FROM handovers WHERE created_at LIKE ?")
-    .get(`${datePrefix}%`) as { count: number };
+    .prepare("SELECT COUNT(*) as count FROM handovers WHERE created_at LIKE :created_at_like")
+    .get({ created_at_like: `${datePrefix}%` }) as { count: number };
   const sequence = String(row.count + 1).padStart(3, "0");
   return `HO-${compactDate}-${sequence}`;
 }

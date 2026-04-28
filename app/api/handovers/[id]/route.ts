@@ -34,7 +34,7 @@ export async function GET(
     return NextResponse.json({ error: "Invalid ID." }, { status: 400 });
   }
 
-  const row = getDb().prepare("SELECT * FROM handovers WHERE id = ?").get(id) as
+  const row = getDb().prepare("SELECT * FROM handovers WHERE id = :id").get({ id }) as
     | HandoverRow
     | undefined;
 
@@ -61,20 +61,20 @@ export async function PATCH(
   const acknowledgedBy = body.acknowledgedBy?.trim() || "Unknown";
   const acknowledgedAt = new Date().toISOString();
   db.prepare(
-    "UPDATE handovers SET acknowledged = 1, acknowledged_at = ? WHERE id = ?"
-  ).run(acknowledgedAt, id);
+    "UPDATE handovers SET acknowledged = 1, acknowledged_at = :acknowledged_at WHERE id = :id"
+  ).run({ acknowledged_at: acknowledgedAt, id });
   db.prepare(
     `INSERT INTO events (handover_id, event_type, actor, description, created_at)
-     VALUES (?, ?, ?, ?, ?)`
-  ).run(
-    id,
-    "acknowledged",
-    acknowledgedBy,
-    `${acknowledgedBy} acknowledged this handover`,
-    new Date().toISOString()
-  );
+     VALUES (:handover_id, :event_type, :actor, :description, :created_at)`
+  ).run({
+    handover_id: id,
+    event_type: "acknowledged",
+    actor: acknowledgedBy,
+    description: `${acknowledgedBy} acknowledged this handover`,
+    created_at: new Date().toISOString(),
+  });
 
-  const row = db.prepare("SELECT * FROM handovers WHERE id = ?").get(id) as
+  const row = db.prepare("SELECT * FROM handovers WHERE id = :id").get({ id }) as
     | HandoverRow
     | undefined;
   if (!row) {

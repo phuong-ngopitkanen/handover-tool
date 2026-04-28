@@ -25,13 +25,17 @@ export async function GET(
        JOIN handovers h ON h.id = e.handover_id
        WHERE e.event_type != 'followup_added'
          AND (
-           LOWER(TRIM(e.actor)) = LOWER(?)
-           OR LOWER(COALESCE(e.description, '')) LIKE LOWER(?)
-           OR LOWER(COALESCE(e.description, '')) LIKE LOWER(?)
+          LOWER(TRIM(e.actor)) = LOWER(:name)
+          OR LOWER(COALESCE(e.description, '')) LIKE LOWER(:like_name)
+          OR LOWER(COALESCE(e.description, '')) LIKE LOWER(:like_at_name)
          )
        ORDER BY e.created_at ASC`
     )
-    .all(name, likeName, likeAtName) as (EventRow & { ticket_id: string })[];
+    .all({
+      name,
+      like_name: likeName,
+      like_at_name: likeAtName,
+    }) as (EventRow & { ticket_id: string })[];
 
   return NextResponse.json({
     name,

@@ -26,9 +26,22 @@ export async function POST(
   };
   const actor = body.actor?.trim() ?? "";
   const item = body.item?.trim() ?? "";
+  const itemType = body.itemType;
   const comment = typeof body.comment === "string" ? body.comment.trim() : "";
   if (!actor || !item) {
     return NextResponse.json({ error: "actor and item are required." }, { status: 400 });
+  }
+  if (actor.length > 100) {
+    return NextResponse.json({ error: "actor must be 100 characters or fewer." }, { status: 400 });
+  }
+  if (item.length > 1000) {
+    return NextResponse.json({ error: "item must be 1000 characters or fewer." }, { status: 400 });
+  }
+  if (itemType !== "next_step" && itemType !== "open_item") {
+    return NextResponse.json(
+      { error: "itemType must be exactly 'next_step' or 'open_item'." },
+      { status: 400 }
+    );
   }
 
   const description = comment
@@ -39,13 +52,19 @@ export async function POST(
   const db = getDb();
   const result = db
     .prepare(
-      "INSERT INTO events (handover_id, event_type, actor, description, created_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO events (handover_id, event_type, actor, description, created_at) VALUES (:handover_id, :event_type, :actor, :description, :created_at)"
     )
-    .run(id, "item_checked", actor, description, createdAt);
+    .run({
+      handover_id: id,
+      event_type: "item_checked",
+      actor,
+      description,
+      created_at: createdAt,
+    });
 
   const inserted = db
-    .prepare("SELECT * FROM events WHERE id = ?")
-    .get(result.lastInsertRowid) as EventRow | undefined;
+    .prepare("SELECT * FROM events WHERE id = :id")
+    .get({ id: result.lastInsertRowid }) as EventRow | undefined;
   if (!inserted) {
     return NextResponse.json({ error: "Insert failed." }, { status: 500 });
   }

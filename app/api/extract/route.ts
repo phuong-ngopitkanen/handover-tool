@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { TEAM_MEMBERS } from "@/lib/team";
 
 export const runtime = "nodejs";
+const MAX_EXTRACT_BYTES = 5 * 1024 * 1024;
+const RATE_WINDOW_MS = 60_000;
+const RATE_LIMIT = 10;
+const requestCounts = new Map<string, { count: number; resetAt: number }>();
 
 const buildPrompt = (text: string) => `
 You are a JSON extraction assistant. Read the on-call handover document below and extract key information.
@@ -55,7 +59,9 @@ function stripMarkdownFences(raw: string) {
 }
 
 export async function POST(request: Request) {
-  console.log("MISTRAL KEY:", process.env.MISTRAL_API_KEY ? "loaded" : "MISSING");
+  if (!process.env.MISTRAL_API_KEY) {
+    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+  }
 
   const fallbackResponse = {
     fallback: true,
@@ -71,6 +77,24 @@ export async function POST(request: Request) {
   };
 
   try {
+    const forwardedFor = request.headers.get("x-forwarded-for");
+    const ip = forwardedFor?.split(",")[0]?.trim() || "unknown";
+    const now = Date.now();
+    const current = requestCounts.get(ip);
+    if (!current || current.resetAt <= now) {
+      requestCounts.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    } else if (current.count >= RATE_LIMIT) {
+      return NextResponse.json({ error: "Too many requests." }, { status: 429 });
+    } else {
+      current.count += 1;
+    }
+
+    for (const [key, value] of requestCounts) {
+      if (value.resetAt <= now) {
+        requestCounts.delete(key);
+      }
+    }
+
     let inputText = "";
     const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
 
@@ -80,6 +104,9 @@ export async function POST(request: Request) {
 
       if (!(file instanceof File)) {
         throw new Error("Missing file upload.");
+      }
+      if (file.size > MAX_EXTRACT_BYTES) {
+        return NextResponse.json({ error: "File too large. Max 5MB." }, { status: 413 });
       }
 
       const lowerName = file.name.toLowerCase();
@@ -95,6 +122,10 @@ export async function POST(request: Request) {
     } else if (contentType.includes("application/json")) {
       const body = (await request.json()) as { text?: string };
       inputText = (body.text ?? "").trim();
+      const textBytes = Buffer.byteLength(inputText, "utf8");
+      if (textBytes > MAX_EXTRACT_BYTES) {
+        return NextResponse.json({ error: "Request too large. Max 5MB." }, { status: 413 });
+      }
     } else {
       throw new Error("Unsupported content type.");
     }
