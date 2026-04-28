@@ -412,8 +412,8 @@ export default function SubmitPage() {
         <h1 className="mb-1 text-[28px] font-bold text-[#1A1A1A]">Submit handover</h1>
         <p className="mb-8 text-sm text-[#6B6B6B]">
           {extracted
-            ? "Review and edit all fields, then submit."
-            : "Upload a document or paste text, then extract with AI."}
+            ? "Review the information below and adjust anything that looks incorrect."
+            : "Add your shift notes and we will structure them automatically.Upload a document or paste text to get started."}
         </p>
 
         {!extracted ? (
