@@ -51,7 +51,7 @@ export function getDb() {
   }
 
   const dbPath = process.env.NODE_ENV === "production"
-    ? "/tmp/handovers.db"
+    ? "/app/data/handovers.db"
     :path.join(process.cwd(), "handovers.db");
   const db = new Database(dbPath);
 
