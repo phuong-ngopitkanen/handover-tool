@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import path from "node:path";
+import { SEED_TEAM_MEMBERS } from "@/lib/team";
 
 let dbInstance: Database.Database | null = null;
 
@@ -27,6 +28,12 @@ export type EventRow = {
   event_type: string;
   actor: string | null;
   description: string | null;
+  created_at: string;
+};
+
+export type PersonRow = {
+  id: number;
+  name: string;
   created_at: string;
 };
 
@@ -116,6 +123,27 @@ export function getDb() {
       created_at TEXT NOT NULL
     )
   `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS people (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  const peopleCountRow = db
+    .prepare("SELECT COUNT(*) as count FROM people")
+    .get() as { count: number };
+  if (peopleCountRow.count === 0) {
+    const insertPerson = db.prepare(
+      "INSERT INTO people (name, created_at) VALUES (:name, :created_at)"
+    );
+    const now = new Date().toISOString();
+    for (const name of SEED_TEAM_MEMBERS) {
+      insertPerson.run({ name, created_at: now });
+    }
+  }
 
   dbInstance = db;
   return dbInstance;

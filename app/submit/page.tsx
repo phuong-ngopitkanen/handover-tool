@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TEAM_MEMBERS, filterMembersForAtMention, isResolved } from "@/lib/team";
 import { renderWithMentions } from "@/lib/renderMentions";
 
 function safeString(val: unknown): string {
@@ -23,6 +22,12 @@ type ExtractedPayload = {
   unresolvedMentions: string[];
 };
 
+type Person = {
+  id: number;
+  name: string;
+  created_at: string;
+};
+
 function caretOffsetIn(el: HTMLElement): number {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return el.innerText.length;
@@ -37,10 +42,12 @@ function MentionLineEditor({
   value,
   onChange,
   onMentionNavigate,
+  people,
 }: {
   value: string;
   onChange: (next: string) => void;
   onMentionNavigate: (name: string) => void;
+  people: string[];
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pickOptions, setPickOptions] = useState<string[]>([]);
@@ -71,7 +78,12 @@ function MentionLineEditor({
 
     const start = offset - mentionMatch[0].length;
     const end = offset;
-    const matches = filterMembersForAtMention(mentionMatch[1]);
+    const lowered = mentionMatch[1].toLowerCase();
+    const matches = people.filter(
+      (member) =>
+        member.toLowerCase().includes(lowered) ||
+        member.split(" ")[0]?.toLowerCase().startsWith(lowered)
+    );
 
     if (matches.length === 1) {
       const merged = `${text.slice(0, start)}@${matches[0]} ${text.slice(end)}`;
@@ -166,8 +178,14 @@ export default function SubmitPage() {
     null
   );
   const [inputTab, setInputTab] = useState<"upload" | "paste">("upload");
+  const [people, setPeople] = useState<Person[]>([]);
+  const [creatingForUnresolved, setCreatingForUnresolved] = useState<string | null>(null);
+  const [newPersonNameByMention, setNewPersonNameByMention] = useState<Record<string, string>>({});
+  const [selectionByMention, setSelectionByMention] = useState<Record<string, string>>({});
 
   const router = useRouter();
+
+  const peopleNames = useMemo(() => people.map((person) => person.name), [people]);
 
   const canSubmit = useMemo(
     () =>
@@ -189,6 +207,26 @@ export default function SubmitPage() {
         (inputTab === "paste" && pastedText.trim().length > 0)),
     [isExtracting, inputTab, selectedFile, pastedText]
   );
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadPeople() {
+      try {
+        const res = await fetch("/api/people");
+        if (!res.ok) return;
+        const data = (await res.json()) as Person[];
+        if (mounted) {
+          setPeople(data);
+        }
+      } catch {
+        // keep page functional even if people lookup fails
+      }
+    }
+    void loadPeople();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function handleExtract() {
     if (!canExtract) {
@@ -264,7 +302,7 @@ export default function SubmitPage() {
     const mergedPeople = [
       ...new Set(
         [
-          ...extracted.peopleInvolved.filter((name) => isResolved(name)),
+          ...extracted.peopleInvolved,
           ...manualMentions,
           safeString(submittedBy),
           safeString(handoverTo),
@@ -306,7 +344,7 @@ export default function SubmitPage() {
   }
 
   function addResolvedPerson(name: string) {
-    if (!extracted || !isResolved(name)) return;
+    if (!extracted || !name.trim()) return;
     setExtracted({
       ...extracted,
       peopleInvolved: [...new Set([...extracted.peopleInvolved, name])],
@@ -326,6 +364,35 @@ export default function SubmitPage() {
       peopleInvolved: [...new Set([...extracted.peopleInvolved, selection])],
     });
     setActiveUnresolved(null);
+  }
+
+  async function createPersonAndResolve(unresolvedName: string) {
+    const candidate = safeString(newPersonNameByMention[unresolvedName]);
+    if (!candidate || !extracted) return;
+    setCreatingForUnresolved(unresolvedName);
+    try {
+      const res = await fetch("/api/people", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: candidate }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to add person");
+      }
+      const created = (await res.json()) as Person;
+      setPeople((prev) =>
+        prev.some((person) => person.name.toLowerCase() === created.name.toLowerCase())
+          ? prev
+          : [...prev, created].sort((a, b) => a.name.localeCompare(b.name))
+      );
+      resolveUnresolved(unresolvedName, created.name);
+      setSelectionByMention((prev) => ({ ...prev, [unresolvedName]: "" }));
+      setNewPersonNameByMention((prev) => ({ ...prev, [unresolvedName]: "" }));
+    } catch {
+      setError("Could not add this person.");
+    } finally {
+      setCreatingForUnresolved(null);
+    }
   }
 
   function replaceMentionWith(fullName: string) {
@@ -355,7 +422,12 @@ export default function SubmitPage() {
     const raw = mentionMatch[1];
     const tokenStart = caret - mentionMatch[0].length;
     const tokenEnd = caret;
-    const matches = filterMembersForAtMention(raw);
+    const lowered = raw.toLowerCase();
+    const matches = peopleNames.filter(
+      (member) =>
+        member.toLowerCase().includes(lowered) ||
+        member.split(" ")[0]?.toLowerCase().startsWith(lowered)
+    );
 
     setMentionRange({ start: tokenStart, end: tokenEnd });
     if (matches.length === 1) {
@@ -628,6 +700,7 @@ export default function SubmitPage() {
                       <div className="min-w-0 flex-1">
                         <MentionLineEditor
                           value={line}
+                          people={peopleNames}
                           onChange={(next) =>
                             setExtracted((prev) => {
                               if (!prev) return prev;
@@ -686,6 +759,7 @@ export default function SubmitPage() {
                       <div className="min-w-0 flex-1">
                         <MentionLineEditor
                           value={line}
+                          people={peopleNames}
                           onChange={(next) =>
                             setExtracted((prev) => {
                               if (!prev) return prev;
@@ -782,15 +856,17 @@ export default function SubmitPage() {
                     }}
                   >
                     <option value="" disabled>
-                      Select team member
+                      Select person
                     </option>
-                    {TEAM_MEMBERS.filter(
+                    {peopleNames
+                      .filter(
                       (member) => !extracted.peopleInvolved.includes(member)
-                    ).map((member) => (
+                    )
+                      .map((member) => (
                       <option key={member} value={member}>
                         {member}
                       </option>
-                    ))}
+                      ))}
                   </select>
                 ) : null}
 
@@ -812,24 +888,62 @@ export default function SubmitPage() {
                       {activeUnresolved === name ? (
                         <div className="rounded border border-[#E9E9E7] bg-white p-2">
                           <p className="mb-1 text-xs text-[#6B6B6B]">Who is {name}?</p>
-                          <div className="space-y-1">
-                            {TEAM_MEMBERS.map((member) => (
-                              <button
-                                key={member}
-                                type="button"
-                                onClick={() => resolveUnresolved(name, member)}
-                                className="block w-full rounded px-2 py-1 text-left text-sm text-[#1A1A1A] hover:bg-[#F7F7F5]"
-                              >
-                                {member}
-                              </button>
-                            ))}
-                            <button
-                              type="button"
-                              onClick={() => resolveUnresolved(name, "__not_team__")}
-                              className="block w-full rounded px-2 py-1 text-left text-sm text-[#6B6B6B] hover:bg-[#F7F7F5]"
+                          <div className="space-y-2">
+                            <select
+                              className="w-full text-sm"
+                              value={selectionByMention[name] ?? ""}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setSelectionByMention((prev) => ({ ...prev, [name]: value }));
+                                if (value && value !== "__add_new__") {
+                                  resolveUnresolved(name, value);
+                                }
+                              }}
                             >
-                              Not a team member
-                            </button>
+                              <option value="">Choose person</option>
+                              {peopleNames.map((member) => (
+                                <option key={member} value={member}>
+                                  {member}
+                                </option>
+                              ))}
+                              <option value="__add_new__">Add as new person</option>
+                              <option value="__not_team__">Not a team member</option>
+                            </select>
+                            {selectionByMention[name] === "__not_team__" ? (
+                              <button
+                                type="button"
+                                onClick={() => resolveUnresolved(name, "__not_team__")}
+                                className="rounded border border-[#E9E9E7] px-2 py-1 text-sm text-[#6B6B6B] hover:bg-[#F7F7F5]"
+                              >
+                                Confirm not a team member
+                              </button>
+                            ) : null}
+                            {selectionByMention[name] === "__add_new__" ? (
+                              <div className="flex items-center gap-2">
+                                <input
+                                  value={newPersonNameByMention[name] ?? ""}
+                                  onChange={(event) =>
+                                    setNewPersonNameByMention((prev) => ({
+                                      ...prev,
+                                      [name]: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="Full name"
+                                  className="w-full text-sm"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={
+                                    creatingForUnresolved === name ||
+                                    !safeString(newPersonNameByMention[name])
+                                  }
+                                  onClick={() => void createPersonAndResolve(name)}
+                                  className="rounded-md border border-[#E9E9E7] bg-white px-3 py-2 text-sm text-[#1A1A1A] hover:bg-[#F7F7F5] disabled:opacity-50"
+                                >
+                                  Add
+                                </button>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       ) : null}
@@ -851,42 +965,6 @@ export default function SubmitPage() {
                   {isSubmitting ? "Submitting…" : "Submit handover"}
                 </button>
               </div>
-            </div>
-          </section>
-        ) : null}
-
-        {extracted && extracted.unresolvedMentions.length ? (
-          <section className="mt-8 rounded-lg border border-[#E9E9E7] bg-[#F7F7F5] p-6">
-            <h2 className="text-base font-semibold text-[#1A1A1A]">Unresolved mentions</h2>
-            <p className="mt-1 text-sm text-[#6B6B6B]">
-              These names were found but could not be matched to a team member. Choose a match
-              or dismiss.
-            </p>
-            <div className="mt-4 space-y-3">
-              {extracted.unresolvedMentions.map((name) => (
-                <div key={name} className="grid gap-2 sm:grid-cols-2 sm:items-center">
-                  <p className="text-sm font-medium text-[#1A1A1A]">{name}</p>
-                  <select
-                    className="w-full text-sm"
-                    defaultValue=""
-                    onChange={(event) => {
-                      if (event.target.value) {
-                        resolveUnresolved(name, event.target.value);
-                      }
-                    }}
-                  >
-                    <option value="" disabled>
-                      Choose match
-                    </option>
-                    {TEAM_MEMBERS.map((member) => (
-                      <option key={member} value={member}>
-                        {member}
-                      </option>
-                    ))}
-                    <option value="__not_team__">Not a team member</option>
-                  </select>
-                </div>
-              ))}
             </div>
           </section>
         ) : null}

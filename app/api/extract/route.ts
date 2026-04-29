@@ -1,6 +1,6 @@
 import mammoth from "mammoth";
 import { NextResponse } from "next/server";
-import { TEAM_MEMBERS } from "@/lib/team";
+import { getDb, type PersonRow } from "@/lib/db";
 
 export const runtime = "nodejs";
 const MAX_EXTRACT_BYTES = 5 * 1024 * 1024;
@@ -201,13 +201,19 @@ export async function POST(request: Request) {
         ? [...new Set(parsed.peopleInvolved.map((name) => safeStr(name)).filter(Boolean))]
         : [];
 
+      const db = getDb();
+      const people = db
+        .prepare("SELECT name FROM people ORDER BY name ASC")
+        .all() as Array<Pick<PersonRow, "name">>;
+      const allPeople = people.map((person) => person.name).filter(Boolean);
+
       const resolvedSet = new Set<string>();
       const unresolvedMentions: string[] = [];
 
       for (const rawName of rawPeople) {
         const name = rawName.trim();
         if (!name) continue;
-        const match = TEAM_MEMBERS.find((member) => {
+        const match = allPeople.find((member) => {
           const memberLower = member.toLowerCase();
           const nameLower = name.toLowerCase();
           return (

@@ -9,7 +9,6 @@ import {
   TIMELINE_LEGEND,
   timelineEventCardStyle,
 } from "@/lib/timelineEventColors";
-import { filterMembersForAtMention } from "@/lib/team";
 
 type Handover = {
   id: number;
@@ -41,6 +40,12 @@ type EventItem = {
     | "action_required";
   actor: string | null;
   description: string | null;
+  created_at: string;
+};
+
+type Person = {
+  id: number;
+  name: string;
   created_at: string;
 };
 
@@ -101,6 +106,7 @@ function FeedContent() {
   const [checkComment, setCheckComment] = useState("");
   const [ackName, setAckName] = useState("");
   const [showAckPrompt, setShowAckPrompt] = useState(false);
+  const [people, setPeople] = useState<Person[]>([]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const cardRefs = useRef<Record<number, HTMLButtonElement | null>>({});
@@ -170,6 +176,26 @@ function FeedContent() {
     });
     return () => cancelAnimationFrame(frame);
   }, [searchParams, handovers, selectHandover]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadPeople() {
+      try {
+        const res = await fetch("/api/people");
+        if (!res.ok) return;
+        const data = (await res.json()) as Person[];
+        if (mounted) {
+          setPeople(data);
+        }
+      } catch {
+        // ignore people lookup failures; mention suggestions simply won't appear
+      }
+    }
+    void loadPeople();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const items = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -257,7 +283,14 @@ function FeedContent() {
     const raw = mentionMatch[1];
     const tokenStart = caret - mentionMatch[0].length;
     const tokenEnd = caret;
-    const matches = filterMembersForAtMention(raw);
+    const lowered = raw.toLowerCase();
+    const matches = people
+      .map((person) => person.name)
+      .filter(
+        (member) =>
+          member.toLowerCase().includes(lowered) ||
+          member.split(" ")[0]?.toLowerCase().startsWith(lowered)
+      );
 
     const range = { start: tokenStart, end: tokenEnd };
     setUpdateMentionRange(range);
